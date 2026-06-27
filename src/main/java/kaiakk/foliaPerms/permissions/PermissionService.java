@@ -288,6 +288,30 @@ public class PermissionService {
         return groups.computeIfAbsent(key, GroupData::new);
     }
 
+    /**
+     * Deletes a group and removes it from every user that belonged to it.
+     * Online members of the group are refreshed so the change takes effect
+     * immediately.
+     *
+     * @return true if the group existed and was removed, false otherwise.
+     */
+    public boolean deleteGroup(String name) {
+        if (name == null) return false;
+        String key = name.toLowerCase();
+        GroupData removed = groups.remove(key);
+        if (removed == null) return false;
+
+        java.util.Set<UUID> affected = new java.util.HashSet<>();
+        for (Map.Entry<UUID, UserData> e : users.entrySet()) {
+            if (e.getValue().getGroups().remove(key)) {
+                affected.add(e.getKey());
+            }
+        }
+        plugin.getLogger().info("Deleted group '" + key + "' (removed from " + affected.size() + " users)");
+        for (UUID id : affected) refreshPlayer(id);
+        return true;
+    }
+
     public GroupData getGroup(String name) {
         if (name == null) return null;
         return groups.get(name.toLowerCase());

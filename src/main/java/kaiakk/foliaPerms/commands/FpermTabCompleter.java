@@ -63,13 +63,19 @@ public class FpermTabCompleter implements TabCompleter {
 
         if (sub.equals("group")) {
             if (args.length == 2) {
-                String[] opts = new String[]{"create","addperm","adduser","removeuser"};
+                String[] opts = new String[]{"create","delete","addperm","adduser","removeuser"};
                 for (String s : opts) if (s.startsWith(args[1].toLowerCase())) res.add(s);
                 return res;
             }
             if (args.length >= 3) {
                 String action = args[1].toLowerCase();
                 if (action.equals("create")) {
+                    return res;
+                }
+                if (action.equals("delete")) {
+                    if (args.length == 3) {
+                        return service.getGroups().keySet().stream().filter(g -> g.startsWith(args[2].toLowerCase())).sorted().collect(Collectors.toList());
+                    }
                     return res;
                 }
                 if (action.equals("addperm")) {

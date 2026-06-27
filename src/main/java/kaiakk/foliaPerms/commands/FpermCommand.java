@@ -50,7 +50,7 @@ public class FpermCommand implements CommandExecutor {
         try {
             switch (sub) {
                 case "help":
-                    send(sender, ColorConverter.colorize("&eUsage: /fperm editor | reload | gather | user addperm <player> <perm> | user removeperm <player> <perm> | user addgroup <player> <group> | user removegroup <player> <group> | group create <name> | group addperm <name> <perm> | group adduser <name> <player> | group removeuser <name> <player> | check <player> <perm>"));
+                    send(sender, ColorConverter.colorize("&eUsage: /fperm editor | reload | gather | user addperm <player> <perm> | user removeperm <player> <perm> | user addgroup <player> <group> | user removegroup <player> <group> | group create <name> | group delete <name> | group addperm <name> <perm> | group adduser <name> <player> | group removeuser <name> <player> | check <player> <perm>"));
                     break;
                 case "editor":
                     if (!(sender instanceof org.bukkit.entity.Player)) {
@@ -149,7 +149,7 @@ public class FpermCommand implements CommandExecutor {
                     break;
                 case "group":
                     if (args.length < 2) {
-                        send(sender, ColorConverter.colorize("&eUsage: /fperm group create|addperm|adduser|removeuser <args>"));
+                        send(sender, ColorConverter.colorize("&eUsage: /fperm group create|delete|addperm|adduser|removeuser <args>"));
                         break;
                     }
                     try {
@@ -159,6 +159,15 @@ public class FpermCommand implements CommandExecutor {
                             service.createGroup(args[2]);
                             plugin.getPermissionService().saveAsync();
                             send(sender, ColorConverter.colorize("&aGroup created: " + args[2]));
+                        } else if (gaction.equals("delete")) {
+                            if (args.length < 3) { send(sender, ColorConverter.colorize("&eUsage: /fperm group delete <name>")); break; }
+                            boolean deleted = service.deleteGroup(args[2]);
+                            if (deleted) {
+                                plugin.getPermissionService().saveAsync();
+                                send(sender, ColorConverter.colorize("&aGroup deleted: " + args[2]));
+                            } else {
+                                send(sender, ColorConverter.colorize("&cGroup not found: " + args[2]));
+                            }
                         } else if (gaction.equals("addperm")) {
                             if (args.length < 4) { send(sender, ColorConverter.colorize("&eUsage: /fperm group addperm <name> <perm>")); break; }
                             service.addGroupPermission(args[2], args[3]);
