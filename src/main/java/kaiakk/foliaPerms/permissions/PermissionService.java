@@ -1,7 +1,6 @@
 package kaiakk.foliaPerms.permissions;
 
 import kaiakk.foliaPerms.FoliaPerms;
-import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
@@ -151,6 +150,43 @@ public class PermissionService {
         return result;
     }
 
+    /**
+     * Computes the effective set of permission nodes that should be granted to a
+     * player, by directly unioning the player's own permissions with the
+     * permissions of every group they belong to. Wildcard nodes (e.g.
+     * {@code "essentials.*"}) are expanded against the currently registered
+     * permissions so that child nodes are granted too.
+     *
+     * <p>This is O(directPerms) in the common case (and only O(directPerms ×
+     * registeredPerms) when wildcards are present), as opposed to
+     * {@link #getAllowedPermissions(UUID)} which always scans every registered
+     * permission. It is what the attachment refresh path uses, so it must stay
+     * cheap.
+     */
+    public java.util.Set<String> computeEffectivePermissions(UUID id) {
+        var direct = new java.util.HashSet<String>();
+        UserData ud = users.get(id);
+        if (ud != null) {
+            direct.addAll(ud.getPermissions());
+            for (String g : ud.getGroups()) {
+                GroupData gd = groups.get(g.toLowerCase());
+                if (gd != null) direct.addAll(gd.getPermissions());
+            }
+        }
+
+        var result = new java.util.HashSet<String>();
+        for (String node : direct) {
+            result.add(node);
+            if (node.endsWith(".*")) {
+                String prefix = node.substring(0, node.length() - 1); // keep trailing dot
+                for (String reg : registeredPermissions) {
+                    if (reg.startsWith(prefix)) result.add(reg);
+                }
+            }
+        }
+        return result;
+    }
+
     public void save() throws IOException {
         storage.save(users, groups);
     }
@@ -209,6 +245,27 @@ public class PermissionService {
         return users.get(id);
     }
 
+    /**
+     * Refreshes the live attachment of a single online player (if any). The
+     * refresh itself is dispatched onto the correct region thread by
+     * {@link FoliaPerms#refreshPlayerAttachment}, so this is safe to call from
+     * any thread.
+     */
+    private void refreshPlayer(UUID id) {
+        if (plugin instanceof FoliaPerms fp) {
+            var player = fp.getServer().getPlayer(id);
+            if (player != null) fp.refreshPlayerAttachment(player);
+        }
+    }
+
+    /**
+     * Refreshes only the online members of a group (instead of every online
+     * player), which is what changing a group's permissions actually affects.
+     */
+    private void refreshGroup(String group) {
+        if (plugin instanceof FoliaPerms fp) fp.refreshGroupMembers(group);
+    }
+
     public void addUserPermission(UUID id, String node) {
         String normalized = node == null ? null : node.toLowerCase();
         if (normalized == null) return;
@@ -216,42 +273,14 @@ public class PermissionService {
         registeredPermissions.add(normalized);
         cachedSortedPermissions = null; // Invalidate cache
         plugin.getLogger().info("Added permission '" + normalized + "' to user " + id.toString());
-        try {
-            if (plugin instanceof FoliaPerms) {
-                var fp = (FoliaPerms) plugin;
-                var player = fp.getServer().getPlayer(id);
-                if (player != null) {
-                    if (Bukkit.isPrimaryThread()) {
-                        fp.refreshPlayerAttachment(player);
-                    } else {
-                        try {
-                            plugin.getServer().getScheduler().runTask(plugin, () -> fp.refreshPlayerAttachment(player));
-                        } catch (Throwable ignored) {}
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
+        refreshPlayer(id);
     }
 
     public void removeUserPermission(UUID id, String node) {
         UserData ud = getUser(id);
         if (ud != null) ud.removePermission(node);
         plugin.getLogger().info("Removed permission '" + node + "' from user " + id.toString());
-        try {
-            if (plugin instanceof FoliaPerms) {
-                var fp = (FoliaPerms) plugin;
-                var player = fp.getServer().getPlayer(id);
-                if (player != null) {
-                    if (Bukkit.isPrimaryThread()) {
-                        fp.refreshPlayerAttachment(player);
-                    } else {
-                        try {
-                            plugin.getServer().getScheduler().runTask(plugin, () -> fp.refreshPlayerAttachment(player));
-                        } catch (Throwable ignored) {}
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
+        refreshPlayer(id);
     }
 
     public GroupData createGroup(String name) {
@@ -272,15 +301,7 @@ public class PermissionService {
         registeredPermissions.add(normalized);
         cachedSortedPermissions = null; // Invalidate cache
         plugin.getLogger().info("Added group permission '" + normalized + "' to group " + name);
-        try {
-            if (plugin instanceof FoliaPerms) {
-                JavaPlugin p = plugin;
-                plugin.getServer().getScheduler().runTask(p, () -> {
-                    var fp = (FoliaPerms) plugin;
-                    fp.refreshAllAttachments();
-                });
-            }
-        } catch (Throwable ignored) {}
+        refreshGroup(name);
     }
 
 
@@ -289,16 +310,7 @@ public class PermissionService {
         ud.addGroup(group);
         GroupData gd = createGroup(group);
         gd.addMember(id.toString());
-        try {
-            if (plugin instanceof FoliaPerms) {
-                JavaPlugin p = plugin;
-                plugin.getServer().getScheduler().runTask(p, () -> {
-                    var fp = (FoliaPerms) plugin;
-                    var player = fp.getServer().getPlayer(id);
-                    if (player != null) fp.refreshPlayerAttachment(player);
-                });
-            }
-        } catch (Throwable ignored) {}
+        refreshPlayer(id);
     }
 
     public void removeUserFromGroup(UUID id, String group) {
@@ -309,16 +321,7 @@ public class PermissionService {
         GroupData gd = groups.get(key);
         if (gd != null) gd.removeMember(id.toString());
         plugin.getLogger().info("Removed user " + id + " from group " + group);
-        try {
-            if (plugin instanceof FoliaPerms) {
-                JavaPlugin p = plugin;
-                plugin.getServer().getScheduler().runTask(p, () -> {
-                    var fp = (FoliaPerms) plugin;
-                    var player = fp.getServer().getPlayer(id);
-                    if (player != null) fp.refreshPlayerAttachment(player);
-                });
-            }
-        } catch (Throwable ignored) {}
+        refreshPlayer(id);
     }
 
     /**
@@ -330,12 +333,8 @@ public class PermissionService {
         String normalized = node.toLowerCase();
         UserData ud = users.get(id);
         if (ud != null) {
-            // Direct permission check
-            if (ud.getPermissions().contains(normalized)) return true;
-            
-            // Wildcard check
-            if (ud.getPermissions().contains(normalized + ".*")) return true;
-            
+            if (matches(ud.getPermissions(), normalized)) return true;
+
             // Check groups
             for (String g : ud.getGroups()) {
                 if (checkGroupPermission(g, normalized)) return true;
@@ -345,13 +344,25 @@ public class PermissionService {
     }
 
     /**
-     * Helper method to check group permissions recursively.
+     * Helper method to check group permissions.
      */
     private boolean checkGroupPermission(String groupName, String node) {
         GroupData gd = groups.get(groupName.toLowerCase());
-        if (gd != null) {
-            if (gd.getPermissions().contains(node)) return true;
-            if (gd.getPermissions().contains(node + ".*")) return true;
+        return gd != null && matches(gd.getPermissions(), node);
+    }
+
+    /**
+     * Returns true if {@code node} is granted by the given permission set, taking
+     * into account the global wildcard {@code "*"} and parent wildcards
+     * (e.g. {@code "a.b.c"} is granted by {@code "a.b.*"} or {@code "a.*"}).
+     */
+    private boolean matches(java.util.Set<String> perms, String node) {
+        if (perms.isEmpty()) return false;
+        if (perms.contains(node)) return true;
+        if (perms.contains("*")) return true;
+        int idx = node.length();
+        while ((idx = node.lastIndexOf('.', idx - 1)) > 0) {
+            if (perms.contains(node.substring(0, idx) + ".*")) return true;
         }
         return false;
     }
@@ -373,14 +384,7 @@ public class PermissionService {
         GroupData gd = groups.get(name.toLowerCase());
         if (gd != null) gd.removePermission(node.toLowerCase());
         plugin.getLogger().info("Removed permission '" + node + "' from group " + name);
-        try {
-            if (plugin instanceof FoliaPerms) {
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    var fp = (FoliaPerms) plugin;
-                    fp.refreshAllAttachments();
-                });
-            }
-        } catch (Throwable ignored) {}
+        refreshGroup(name);
     }
 
     public Map<UUID, UserData> getUsers() {

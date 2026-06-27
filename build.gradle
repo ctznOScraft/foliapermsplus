@@ -15,7 +15,9 @@ repositories {
 }
 
 dependencies {
-    compileOnly("io.papermc.paper:paper-api:1.18.2-R0.1-SNAPSHOT")
+    // Folia-only plugin: needs the Folia/Paper scheduler API (Entity#getScheduler,
+    // global/region schedulers), available in paper-api 1.20+.
+    compileOnly("io.papermc.paper:paper-api:1.20.4-R0.1-SNAPSHOT")
 }
 
 tasks {

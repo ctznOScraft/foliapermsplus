@@ -123,10 +123,45 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
     }
 
     /**
-     * Refreshes permission attachment for a specific player.
+     * Runs a task on the region thread that owns the given player. On Folia this
+     * is mandatory: a player's permission attachment must only be mutated from
+     * its owning region thread. Falls back gracefully on non-Folia servers.
+     */
+    private void runForPlayer(Player player, Runnable task) {
+        if (player == null) return;
+        try {
+            player.getScheduler().run(this, t -> task.run(), null);
+        } catch (Throwable foliaUnavailable) {
+            try {
+                if (Bukkit.isPrimaryThread()) {
+                    task.run();
+                } else {
+                    Bukkit.getScheduler().runTask(this, task);
+                }
+            } catch (Throwable t) {
+                getLogger().warning("Could not schedule attachment refresh for "
+                        + player.getName() + ": " + t.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Refreshes permission attachment for a specific player. Safe to call from
+     * any thread; the actual work is dispatched onto the player's region thread.
      */
     public void refreshPlayerAttachment(Player player) {
         if (player == null || permissionService == null) return;
+        runForPlayer(player, () -> applyAttachment(player));
+    }
+
+    /**
+     * Rebuilds a player's attachment from scratch with only the permissions they
+     * actually have. We intentionally do NOT enumerate every registered
+     * permission and set it to {@code false}: doing so was both a major
+     * performance sink and the reason operators lost their op-default
+     * permissions (an explicit {@code false} overrides the op default).
+     */
+    private void applyAttachment(Player player) {
         try {
             UUID id = player.getUniqueId();
             PermissionAttachment old = attachments.remove(id);
@@ -137,29 +172,17 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
             PermissionAttachment attach = player.addAttachment(this);
             attachments.put(id, attach);
 
-            getLogger().fine("Created/updated the permissions attachment for " + player.getName());
-
-            var registered = permissionService.getRegisteredPermissions();
-            for (String node : registered) {
-                attach.setPermission(node, false);
-            }
-
-            var allowed = permissionService.getAllowedPermissions(id);
-            for (String node : allowed) {
+            for (String node : permissionService.computeEffectivePermissions(id)) {
                 attach.setPermission(node, true);
             }
+
+            player.recalculatePermissions();
             try {
-                player.recalculatePermissions();
-                getLogger().fine("Recalculated permissions for " + player.getName());
-                try {
-                    player.updateCommands();
-                    getLogger().fine("Updated command tree for " + player.getName());
-                } catch (Throwable t) {
-                    getLogger().warning("Failed to update command tree for " + player.getName() + ": " + t.getMessage());
-                }
+                player.updateCommands();
             } catch (Throwable t) {
-                getLogger().warning("Failed to recalculate permissions for " + player.getName() + ": " + t.getMessage());
+                getLogger().fine("Could not update command tree for " + player.getName() + ": " + t.getMessage());
             }
+            getLogger().fine("Refreshed permission attachment for " + player.getName());
         } catch (Exception e) {
             getLogger().severe("Failed to refresh attachment for " + player.getName() + ": " + e.getMessage());
         }
@@ -171,6 +194,21 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
     public void refreshAllAttachments() {
         for (Player p : Bukkit.getOnlinePlayers()) {
             refreshPlayerAttachment(p);
+        }
+    }
+
+    /**
+     * Refreshes only the online members of a group. Used when a group's
+     * permissions change, so we avoid touching every online player.
+     */
+    public void refreshGroupMembers(String group) {
+        if (group == null || permissionService == null) return;
+        String key = group.toLowerCase();
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            var ud = permissionService.getUser(p.getUniqueId());
+            if (ud != null && ud.getGroups().contains(key)) {
+                refreshPlayerAttachment(p);
+            }
         }
     }
 

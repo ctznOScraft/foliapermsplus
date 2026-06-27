@@ -158,13 +158,11 @@ public class FpermCommand implements CommandExecutor {
                             if (args.length < 3) { send(sender, ColorConverter.colorize("Usage: /fperm group create <name>")); break; }
                             service.createGroup(args[2]);
                             plugin.getPermissionService().saveAsync();
-                            plugin.refreshAllAttachments();
                             send(sender, ColorConverter.colorize("&aGroup created: " + args[2]));
                         } else if (gaction.equals("addperm")) {
                             if (args.length < 4) { send(sender, ColorConverter.colorize("&eUsage: /fperm group addperm <name> <perm>")); break; }
                             service.addGroupPermission(args[2], args[3]);
                             plugin.getPermissionService().saveAsync();
-                            plugin.refreshAllAttachments();
                             send(sender, ColorConverter.colorize("&aAdded permission " + args[3] + " to group " + args[2]));
                         } else if (gaction.equals("adduser")) {
                             if (args.length < 4) { send(sender, ColorConverter.colorize("&eUsage: /fperm group adduser <name> <player>")); break; }
