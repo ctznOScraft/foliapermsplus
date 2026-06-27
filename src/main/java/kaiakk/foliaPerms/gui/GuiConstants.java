@@ -2,7 +2,6 @@ package kaiakk.foliaPerms.gui;
 
 /**
  * Central constants for GUI slot management and sizing.
- * Version: 1.13.0
  */
 public final class GuiConstants {
     private GuiConstants() {} // Prevent instantiation

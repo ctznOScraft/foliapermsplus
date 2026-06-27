@@ -16,7 +16,6 @@ import java.util.UUID;
 
 /**
  * Handles GUI interactions for the FoliaPerms permission editor.
- * Version: 1.13.0
  */
 public class GuiListener implements Listener {
 

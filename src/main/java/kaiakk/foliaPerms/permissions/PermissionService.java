@@ -15,7 +15,6 @@ import java.util.stream.Collectors;
 /**
  * Core permission system logic and data management.
  * Handles user/group permissions with caching and async operations.
- * Version: 1.13.0
  */
 public class PermissionService {
     private final JavaPlugin plugin;

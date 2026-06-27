@@ -17,7 +17,6 @@ import java.util.UUID;
 
 /**
  * GUI factory for the FoliaPerms permission editor.
- * Version: 1.13.0
  */
 public class EditorGui {
 
