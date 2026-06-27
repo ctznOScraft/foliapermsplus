@@ -24,9 +24,12 @@ public class PermissionService {
     private final Map<UUID, UserData> users = new ConcurrentHashMap<>();
     private final Map<String, GroupData> groups = new ConcurrentHashMap<>();
     private final java.util.Set<String> registeredPermissions = ConcurrentHashMap.newKeySet();
-    
+
     // Cache for sorted permissions (for UI efficiency)
     private List<String> cachedSortedPermissions = null;
+
+    // Name of the implicit default group applied to every player (LuckPerms-style).
+    private volatile String defaultGroupName = "default";
 
     public PermissionService(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -173,6 +176,9 @@ public class PermissionService {
                 if (gd != null) direct.addAll(gd.getPermissions());
             }
         }
+        // The default group is granted to every player implicitly.
+        GroupData defaultGroup = groups.get(defaultGroupName);
+        if (defaultGroup != null) direct.addAll(defaultGroup.getPermissions());
 
         var result = new java.util.HashSet<String>();
         for (String node : direct) {
@@ -263,7 +269,14 @@ public class PermissionService {
      * player), which is what changing a group's permissions actually affects.
      */
     private void refreshGroup(String group) {
-        if (plugin instanceof FoliaPerms fp) fp.refreshGroupMembers(group);
+        if (plugin instanceof FoliaPerms fp) {
+            // The default group affects everyone, not only explicit members.
+            if (isDefaultGroup(group)) {
+                fp.refreshAllAttachments();
+            } else {
+                fp.refreshGroupMembers(group);
+            }
+        }
     }
 
     public void addUserPermission(UUID id, String node) {
@@ -288,6 +301,24 @@ public class PermissionService {
         return groups.computeIfAbsent(key, GroupData::new);
     }
 
+    /** The name of the default group implicitly applied to every player. */
+    public String getDefaultGroupName() {
+        return defaultGroupName;
+    }
+
+    public void setDefaultGroupName(String name) {
+        this.defaultGroupName = (name == null || name.isBlank()) ? "default" : name.toLowerCase();
+    }
+
+    public boolean isDefaultGroup(String name) {
+        return name != null && name.equalsIgnoreCase(defaultGroupName);
+    }
+
+    /** Ensures the configured default group exists so it can be edited like any other. */
+    public void ensureDefaultGroup() {
+        createGroup(defaultGroupName);
+    }
+
     /**
      * Deletes a group and removes it from every user that belonged to it.
      * Online members of the group are refreshed so the change takes effect
@@ -297,6 +328,10 @@ public class PermissionService {
      */
     public boolean deleteGroup(String name) {
         if (name == null) return false;
+        if (isDefaultGroup(name)) {
+            plugin.getLogger().warning("Refused to delete the default group '" + name + "'.");
+            return false;
+        }
         String key = name.toLowerCase();
         GroupData removed = groups.remove(key);
         if (removed == null) return false;
@@ -364,7 +399,8 @@ public class PermissionService {
                 if (checkGroupPermission(g, normalized)) return true;
             }
         }
-        return false;
+        // The default group applies to everyone, even users with no stored record.
+        return checkGroupPermission(defaultGroupName, normalized);
     }
 
     /**

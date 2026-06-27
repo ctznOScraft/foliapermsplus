@@ -60,6 +60,8 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
     public void onEnable() {
         getLogger().info("FoliaPerms v1.13.0 enabled successfully. Welcome to the Folia environment!");
 
+        saveDefaultConfig();
+
         this.permissionService = new PermissionService(this);
         try {
             this.permissionService.load();
@@ -67,6 +69,11 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
         } catch (Exception e) {
             kaiakk.foliaPerms.internal.ErrorHandler.handle(this, "Failed to load permissions data", e);
         }
+
+        String defaultGroup = getConfig().getString("default-group", "default");
+        permissionService.setDefaultGroupName(defaultGroup);
+        permissionService.ensureDefaultGroup();
+        getLogger().info("Default group set to '" + permissionService.getDefaultGroupName() + "'.");
 
         if (getCommand("fperm") != null) {
             getCommand("fperm").setExecutor(new FpermCommand(this));

@@ -1,0 +1,9 @@
+# FoliaPerms configuration
+
+# The default group is implicitly applied to every player on the server,
+# even players who have no explicit group assigned. Grant baseline
+# permissions to all players by adding them to this group, e.g.:
+#   /fperm group addperm default essentials.spawn
+# The group is created automatically on startup if it does not exist and
+# cannot be deleted while it is configured as the default.
+default-group: default

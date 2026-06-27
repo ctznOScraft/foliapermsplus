@@ -71,8 +71,12 @@ public class FpermCommand implements CommandExecutor {
                     }
                     break;
                 case "reload":
+                    plugin.reloadConfig();
                     service.load();
-                    send(sender, ColorConverter.colorize("&aPermissions reloaded."));
+                    service.setDefaultGroupName(plugin.getConfig().getString("default-group", "default"));
+                    service.ensureDefaultGroup();
+                    plugin.refreshAllAttachments();
+                    send(sender, ColorConverter.colorize("&aPermissions reloaded. Default group: " + service.getDefaultGroupName()));
                     break;
                 case "refresh":
                     try {
@@ -161,6 +165,10 @@ public class FpermCommand implements CommandExecutor {
                             send(sender, ColorConverter.colorize("&aGroup created: " + args[2]));
                         } else if (gaction.equals("delete")) {
                             if (args.length < 3) { send(sender, ColorConverter.colorize("&eUsage: /fperm group delete <name>")); break; }
+                            if (service.isDefaultGroup(args[2])) {
+                                send(sender, ColorConverter.colorize("&cCannot delete the default group '" + args[2] + "'."));
+                                break;
+                            }
                             boolean deleted = service.deleteGroup(args[2]);
                             if (deleted) {
                                 plugin.getPermissionService().saveAsync();
