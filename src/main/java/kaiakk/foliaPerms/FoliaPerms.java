@@ -9,6 +9,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.permissions.PermissionAttachment;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -39,6 +41,8 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
 
     private PermissionService permissionService;
     private final Map<UUID, PermissionAttachment> attachments = new ConcurrentHashMap<>();
+    private boolean tablistFormatting = true;
+    private boolean chatFormatting = true;
 
     @Override
     public void onLoad() {
@@ -80,9 +84,16 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
             getCommand("fperm").setTabCompleter(new kaiakk.foliaPerms.commands.FpermTabCompleter(this));
         }
 
+        this.tablistFormatting = getConfig().getBoolean("tablist-formatting", true);
+        this.chatFormatting = getConfig().getBoolean("chat-formatting", true);
+
         getServer().getPluginManager().registerEvents(new PlayerListener(this), this);
         getServer().getPluginManager().registerEvents(new kaiakk.foliaPerms.events.PluginEnableListener(this), this);
         getServer().getPluginManager().registerEvents(new kaiakk.foliaPerms.gui.GuiListener(), this);
+        if (chatFormatting) {
+            getServer().getPluginManager().registerEvents(new kaiakk.foliaPerms.events.ChatListener(this), this);
+            getLogger().info("Chat prefix/suffix formatting enabled.");
+        }
 
         getServer().getServicesManager().register(FoliaPermsAPI.class, this, this, ServicePriority.Normal);
         getLogger().info("FoliaPerms API registered with ServicesManager.");
@@ -189,6 +200,13 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
             } catch (Throwable t) {
                 getLogger().fine("Could not update command tree for " + player.getName() + ": " + t.getMessage());
             }
+            if (tablistFormatting) {
+                try {
+                    player.playerListName(buildDisplayName(id, player.getName()));
+                } catch (Throwable t) {
+                    getLogger().fine("Could not update tab-list name for " + player.getName() + ": " + t.getMessage());
+                }
+            }
             getLogger().fine("Refreshed permission attachment for " + player.getName());
         } catch (Exception e) {
             getLogger().severe("Failed to refresh attachment for " + player.getName() + ": " + e.getMessage());
@@ -272,5 +290,31 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
     public String getPrimaryGroup(Player player) {
         var groups = getPlayerGroups(player);
         return groups.stream().findFirst().orElse(null);
+    }
+
+    @Override
+    public String getPrefix(Player player) {
+        if (player == null || permissionService == null) return "";
+        return permissionService.resolvePrefix(player.getUniqueId());
+    }
+
+    @Override
+    public String getSuffix(Player player) {
+        if (player == null || permissionService == null) return "";
+        return permissionService.resolveSuffix(player.getUniqueId());
+    }
+
+    /**
+     * Builds the tab-list display name as {@code prefix + name + suffix},
+     * translating legacy {@code &} colour codes in the prefix/suffix.
+     */
+    public Component buildDisplayName(UUID id, String name) {
+        LegacyComponentSerializer legacy = LegacyComponentSerializer.legacyAmpersand();
+        String prefix = permissionService.resolvePrefix(id);
+        String suffix = permissionService.resolveSuffix(id);
+        return Component.empty()
+                .append(legacy.deserialize(prefix))
+                .append(Component.text(name))
+                .append(legacy.deserialize(suffix));
     }
 }

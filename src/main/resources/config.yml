@@ -7,3 +7,13 @@
 # The group is created automatically on startup if it does not exist and
 # cannot be deleted while it is configured as the default.
 default-group: default
+
+# Show the resolved prefix/suffix in front of/after player names in chat.
+# Prefix/suffix support legacy '&' colour codes (e.g. "&c[Admin] ").
+# Set with: /fperm group setprefix <name> <value>  (or setsuffix / setweight)
+#           /fperm user  setprefix <player> <value>
+# When a player matches multiple groups, the highest-weight group wins.
+chat-formatting: true
+
+# Show the resolved prefix/suffix around player names in the tab list.
+tablist-formatting: true

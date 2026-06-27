@@ -205,6 +205,8 @@ public class PermissionService {
             UserData copy = new UserData(id);
             copy.getPermissions().addAll(orig.getPermissions());
             copy.getGroups().addAll(orig.getGroups());
+            copy.setPrefix(orig.getPrefix());
+            copy.setSuffix(orig.getSuffix());
             usersSnapshot.put(id, copy);
         }
 
@@ -215,6 +217,9 @@ public class PermissionService {
             GroupData copy = new GroupData(key);
             copy.getPermissions().addAll(orig.getPermissions());
             copy.getMembers().addAll(orig.getMembers());
+            copy.setPrefix(orig.getPrefix());
+            copy.setSuffix(orig.getSuffix());
+            copy.setWeight(orig.getWeight());
             groupsSnapshot.put(key, copy);
         }
 
@@ -317,6 +322,72 @@ public class PermissionService {
     /** Ensures the configured default group exists so it can be edited like any other. */
     public void ensureDefaultGroup() {
         createGroup(defaultGroupName);
+    }
+
+    // ---- Prefix / suffix / weight (meta) ----
+
+    public void setUserPrefix(UUID id, String prefix) {
+        getOrCreateUser(id).setPrefix(prefix);
+        refreshPlayer(id);
+    }
+
+    public void setUserSuffix(UUID id, String suffix) {
+        getOrCreateUser(id).setSuffix(suffix);
+        refreshPlayer(id);
+    }
+
+    public void setGroupPrefix(String name, String prefix) {
+        createGroup(name).setPrefix(prefix);
+        refreshGroup(name);
+    }
+
+    public void setGroupSuffix(String name, String suffix) {
+        createGroup(name).setSuffix(suffix);
+        refreshGroup(name);
+    }
+
+    public void setGroupWeight(String name, int weight) {
+        createGroup(name).setWeight(weight);
+        refreshGroup(name);
+    }
+
+    /**
+     * Resolves the prefix to display for a player: a user-level prefix takes
+     * priority, otherwise the prefix of the highest-weight group the player
+     * belongs to (the default group included). Returns "" if none is set.
+     */
+    public String resolvePrefix(UUID id) {
+        return resolveMeta(id, true);
+    }
+
+    /** @see #resolvePrefix(UUID) */
+    public String resolveSuffix(UUID id) {
+        return resolveMeta(id, false);
+    }
+
+    private String resolveMeta(UUID id, boolean prefix) {
+        UserData ud = users.get(id);
+        if (ud != null) {
+            String own = prefix ? ud.getPrefix() : ud.getSuffix();
+            if (own != null) return own;
+        }
+
+        java.util.List<GroupData> candidates = new java.util.ArrayList<>();
+        if (ud != null) {
+            for (String g : ud.getGroups()) {
+                GroupData gd = groups.get(g.toLowerCase());
+                if (gd != null) candidates.add(gd);
+            }
+        }
+        GroupData def = groups.get(defaultGroupName);
+        if (def != null && !candidates.contains(def)) candidates.add(def);
+        candidates.sort((a, b) -> Integer.compare(b.getWeight(), a.getWeight()));
+
+        for (GroupData gd : candidates) {
+            String v = prefix ? gd.getPrefix() : gd.getSuffix();
+            if (v != null) return v;
+        }
+        return "";
     }
 
     /**

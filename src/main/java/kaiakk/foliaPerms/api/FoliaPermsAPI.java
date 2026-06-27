@@ -42,4 +42,21 @@ public interface FoliaPermsAPI {
      * the first group or null if none.
      */
     String getPrimaryGroup(Player player);
+
+    /**
+     * Get the resolved prefix for the player (user override, otherwise the
+     * highest-weight group prefix, including the default group).
+     *
+     * @return the prefix string (may contain legacy {@code &} colour codes);
+     *         empty string if none is set, never null.
+     */
+    String getPrefix(Player player);
+
+    /**
+     * Get the resolved suffix for the player.
+     *
+     * @return the suffix string (may contain legacy {@code &} colour codes);
+     *         empty string if none is set, never null.
+     */
+    String getSuffix(Player player);
 }

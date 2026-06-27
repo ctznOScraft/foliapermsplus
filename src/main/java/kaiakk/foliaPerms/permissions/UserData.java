@@ -9,12 +9,32 @@ public class UserData {
     private final Set<String> permissions = ConcurrentHashMap.newKeySet();
     private final Set<String> groups = ConcurrentHashMap.newKeySet();
 
+    // Per-user prefix/suffix overrides (take priority over group meta). Null = not set.
+    private volatile String prefix;
+    private volatile String suffix;
+
     public UserData(UUID id) {
         this.id = id;
     }
 
     public UUID getId() {
         return id;
+    }
+
+    public String getPrefix() {
+        return prefix;
+    }
+
+    public void setPrefix(String prefix) {
+        this.prefix = (prefix == null || prefix.isEmpty()) ? null : prefix;
+    }
+
+    public String getSuffix() {
+        return suffix;
+    }
+
+    public void setSuffix(String suffix) {
+        this.suffix = (suffix == null || suffix.isEmpty()) ? null : suffix;
     }
 
     public Set<String> getPermissions() {

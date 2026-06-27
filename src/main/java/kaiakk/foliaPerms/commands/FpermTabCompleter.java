@@ -34,7 +34,7 @@ public class FpermTabCompleter implements TabCompleter {
         String sub = args[0].toLowerCase();
         if (sub.equals("user")) {
             if (args.length == 2) {
-                String[] opts = new String[]{"addperm","removeperm","addgroup","removegroup"};
+                String[] opts = new String[]{"addperm","removeperm","addgroup","removegroup","setprefix","setsuffix"};
                 for (String s : opts) if (s.startsWith(args[1].toLowerCase())) res.add(s);
                 return res;
             }
@@ -63,7 +63,7 @@ public class FpermTabCompleter implements TabCompleter {
 
         if (sub.equals("group")) {
             if (args.length == 2) {
-                String[] opts = new String[]{"create","delete","addperm","adduser","removeuser"};
+                String[] opts = new String[]{"create","delete","addperm","adduser","removeuser","setprefix","setsuffix","setweight"};
                 for (String s : opts) if (s.startsWith(args[1].toLowerCase())) res.add(s);
                 return res;
             }
@@ -72,7 +72,7 @@ public class FpermTabCompleter implements TabCompleter {
                 if (action.equals("create")) {
                     return res;
                 }
-                if (action.equals("delete")) {
+                if (action.equals("delete") || action.equals("setprefix") || action.equals("setsuffix") || action.equals("setweight")) {
                     if (args.length == 3) {
                         return service.getGroups().keySet().stream().filter(g -> g.startsWith(args[2].toLowerCase())).sorted().collect(Collectors.toList());
                     }
