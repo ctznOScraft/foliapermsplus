@@ -116,6 +116,50 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
         } catch (Exception e) {
             kaiakk.foliaPerms.internal.ErrorHandler.handle(this, "Failed to gather registered permissions", e);
         }
+
+        registerIntegrations();
+    }
+
+    /**
+     * Hooks into optional third-party plugins (Vault, PlaceholderAPI) when they
+     * are installed. Each hook lives in its own method and is guarded by a
+     * plugin-presence check plus a Throwable catch, so a missing soft dependency
+     * never loads its integration classes or breaks startup.
+     */
+    private void registerIntegrations() {
+        if (getServer().getPluginManager().getPlugin("Vault") != null) {
+            registerVault();
+        } else {
+            getLogger().info("Vault not found; skipping Vault chat/permission hook.");
+        }
+        if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
+            registerPlaceholderAPI();
+        } else {
+            getLogger().info("PlaceholderAPI not found; skipping placeholder expansion.");
+        }
+    }
+
+    private void registerVault() {
+        try {
+            kaiakk.foliaPerms.integration.VaultPermission vaultPerm = new kaiakk.foliaPerms.integration.VaultPermission(this);
+            getServer().getServicesManager().register(net.milkbowl.vault.permission.Permission.class, vaultPerm, this, ServicePriority.Highest);
+
+            kaiakk.foliaPerms.integration.VaultChat vaultChat = new kaiakk.foliaPerms.integration.VaultChat(this, vaultPerm);
+            getServer().getServicesManager().register(net.milkbowl.vault.chat.Chat.class, vaultChat, this, ServicePriority.Highest);
+
+            getLogger().info("Hooked into Vault: registered FoliaPerms permission and chat providers.");
+        } catch (Throwable t) {
+            getLogger().warning("Failed to hook into Vault: " + t.getMessage());
+        }
+    }
+
+    private void registerPlaceholderAPI() {
+        try {
+            new kaiakk.foliaPerms.integration.FoliaPermsExpansion(this).register();
+            getLogger().info("Registered PlaceholderAPI expansion 'foliaperms' (%foliaperms_prefix%, _suffix%, _group%, _weight%).");
+        } catch (Throwable t) {
+            getLogger().warning("Failed to register PlaceholderAPI expansion: " + t.getMessage());
+        }
     }
 
     @Override

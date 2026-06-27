@@ -423,6 +423,25 @@ public class PermissionService {
         return groups.get(name.toLowerCase());
     }
 
+    /**
+     * Returns the player's "primary" group: the highest-weight group they
+     * explicitly belong to, falling back to the default group name when the
+     * player has no explicit groups. Never null.
+     */
+    public String getPrimaryGroup(UUID id) {
+        UserData ud = users.get(id);
+        GroupData best = null;
+        if (ud != null) {
+            for (String g : ud.getGroups()) {
+                GroupData gd = groups.get(g.toLowerCase());
+                if (gd != null && (best == null || gd.getWeight() > best.getWeight())) {
+                    best = gd;
+                }
+            }
+        }
+        return best != null ? best.getName() : defaultGroupName;
+    }
+
     public void addGroupPermission(String name, String node) {
         if (node == null) return;
         String normalized = node.toLowerCase();
