@@ -21,6 +21,23 @@ public class FpermTabCompleter implements TabCompleter {
         this.service = plugin.getPermissionService();
     }
 
+    /**
+     * Permission-node suggestions for a partial argument, with the "*"
+     * (all-permissions) wildcard offered first so it is discoverable.
+     */
+    private List<String> permSuggestions(String arg) {
+        String partial = arg == null ? "" : arg.toLowerCase();
+        if (service == null) return Collections.emptyList();
+        List<String> out = new ArrayList<>();
+        if ("*".startsWith(partial)) out.add("*");
+        service.getRegisteredPermissions().stream()
+                .filter(p -> p != null && p.toLowerCase().startsWith(partial))
+                .sorted()
+                .limit(25)
+                .forEach(out::add);
+        return out;
+    }
+
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         List<String> res = new ArrayList<>();
@@ -44,13 +61,7 @@ public class FpermTabCompleter implements TabCompleter {
             if (args.length == 4) {
                 String action = args[1].toLowerCase();
                 if (action.equals("addperm") || action.equals("removeperm")) {
-                    String partial = args[3] == null ? "" : args[3].toLowerCase();
-                    if (service == null) return Collections.emptyList();
-                    return service.getRegisteredPermissions().stream()
-                            .filter(p -> p != null && p.toLowerCase().startsWith(partial))
-                            .sorted()
-                            .limit(25)
-                            .collect(Collectors.toList());
+                    return permSuggestions(args[3]);
                 }
                 if (action.equals("addgroup") || action.equals("removegroup")) {
                     String partial = args[3] == null ? "" : args[3].toLowerCase();
@@ -83,13 +94,7 @@ public class FpermTabCompleter implements TabCompleter {
                         return service.getGroups().keySet().stream().filter(g -> g.startsWith(args[2].toLowerCase())).collect(Collectors.toList());
                     }
                     if (args.length == 4) {
-                        String partial = args[3] == null ? "" : args[3].toLowerCase();
-                        if (service == null) return Collections.emptyList();
-                        return service.getRegisteredPermissions().stream()
-                                .filter(p -> p != null && p.toLowerCase().startsWith(partial))
-                                .sorted()
-                                .limit(25)
-                                .collect(Collectors.toList());
+                        return permSuggestions(args[3]);
                     }
                 }
                 if (action.equals("adduser")) {

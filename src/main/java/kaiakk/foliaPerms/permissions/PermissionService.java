@@ -156,9 +156,11 @@ public class PermissionService {
     /**
      * Computes the effective set of permission nodes that should be granted to a
      * player, by directly unioning the player's own permissions with the
-     * permissions of every group they belong to. Wildcard nodes (e.g.
-     * {@code "essentials.*"}) are expanded against the currently registered
-     * permissions so that child nodes are granted too.
+     * permissions of every group they belong to. Wildcard nodes are expanded
+     * against the currently registered permissions so child nodes are granted
+     * too: the bare {@code "*"} grants every registered permission (all
+     * permissions, LuckPerms-style) and {@code "essentials.*"} grants every
+     * permission under that prefix.
      *
      * <p>This is O(directPerms) in the common case (and only O(directPerms ×
      * registeredPerms) when wildcards are present), as opposed to
@@ -183,7 +185,10 @@ public class PermissionService {
         var result = new java.util.HashSet<String>();
         for (String node : direct) {
             result.add(node);
-            if (node.endsWith(".*")) {
+            if (node.equals("*")) {
+                // "all permissions": grant every permission we know about.
+                result.addAll(registeredPermissions);
+            } else if (node.endsWith(".*")) {
                 String prefix = node.substring(0, node.length() - 1); // keep trailing dot
                 for (String reg : registeredPermissions) {
                     if (reg.startsWith(prefix)) result.add(reg);
