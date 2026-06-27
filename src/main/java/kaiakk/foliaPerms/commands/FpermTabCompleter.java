@@ -51,7 +51,7 @@ public class FpermTabCompleter implements TabCompleter {
         String sub = args[0].toLowerCase();
         if (sub.equals("user")) {
             if (args.length == 2) {
-                String[] opts = new String[]{"addperm","removeperm","addgroup","removegroup","setprefix","setsuffix"};
+                String[] opts = new String[]{"addperm","removeperm","addgroup","removegroup","setprefix","setsuffix","groups"};
                 for (String s : opts) if (s.startsWith(args[1].toLowerCase())) res.add(s);
                 return res;
             }
@@ -74,7 +74,7 @@ public class FpermTabCompleter implements TabCompleter {
 
         if (sub.equals("group")) {
             if (args.length == 2) {
-                String[] opts = new String[]{"create","delete","addperm","adduser","removeuser","setprefix","setsuffix","setweight"};
+                String[] opts = new String[]{"create","delete","addperm","adduser","removeuser","setprefix","setsuffix","setweight","members"};
                 for (String s : opts) if (s.startsWith(args[1].toLowerCase())) res.add(s);
                 return res;
             }
@@ -83,7 +83,7 @@ public class FpermTabCompleter implements TabCompleter {
                 if (action.equals("create")) {
                     return res;
                 }
-                if (action.equals("delete") || action.equals("setprefix") || action.equals("setsuffix") || action.equals("setweight")) {
+                if (action.equals("delete") || action.equals("setprefix") || action.equals("setsuffix") || action.equals("setweight") || action.equals("members")) {
                     if (args.length == 3) {
                         return service.getGroups().keySet().stream().filter(g -> g.startsWith(args[2].toLowerCase())).sorted().collect(Collectors.toList());
                     }

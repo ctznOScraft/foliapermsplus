@@ -50,7 +50,7 @@ public class FpermCommand implements CommandExecutor {
         try {
             switch (sub) {
                 case "help":
-                    send(sender, ColorConverter.colorize("&eUsage: /fperm editor | reload | gather | user addperm <player> <perm> | user removeperm <player> <perm> | user addgroup <player> <group> | user removegroup <player> <group> | user setprefix <player> <prefix> | user setsuffix <player> <suffix> | group create <name> | group delete <name> | group addperm <name> <perm> | group adduser <name> <player> | group removeuser <name> <player> | group setprefix <name> <prefix> | group setsuffix <name> <suffix> | group setweight <name> <number> | check <player> <perm>"));
+                    send(sender, ColorConverter.colorize("&eUsage: /fperm editor | reload | gather | user addperm <player> <perm> | user removeperm <player> <perm> | user addgroup <player> <group> | user removegroup <player> <group> | user setprefix <player> <prefix> | user setsuffix <player> <suffix> | user groups <player> | group create <name> | group delete <name> | group addperm <name> <perm> | group adduser <name> <player> | group removeuser <name> <player> | group setprefix <name> <prefix> | group setsuffix <name> <suffix> | group setweight <name> <number> | group members <name> | check <player> <perm>"));
                     break;
                 case "editor":
                     if (!(sender instanceof org.bukkit.entity.Player)) {
@@ -89,7 +89,7 @@ public class FpermCommand implements CommandExecutor {
                     break;
                 case "user":
                     if (args.length < 3) {
-                        send(sender, ColorConverter.colorize("&eUsage: /fperm user addperm|removeperm|addgroup|removegroup|setprefix|setsuffix <player> <value>"));
+                        send(sender, ColorConverter.colorize("&eUsage: /fperm user addperm|removeperm|addgroup|removegroup|setprefix|setsuffix|groups <player> <value>"));
                         break;
                     }
                     String action = args[1].toLowerCase();
@@ -111,7 +111,24 @@ public class FpermCommand implements CommandExecutor {
                             break;
                         }
 
-                        if (action.equals("setprefix") || action.equals("setsuffix")) {
+                        if (action.equals("groups") || action.equals("info")) {
+                            var ud = service.getUser(id);
+                            java.util.List<String> grps = ud == null
+                                    ? java.util.Collections.emptyList()
+                                    : new java.util.ArrayList<>(ud.getGroups());
+                            send(sender, ColorConverter.colorize("&eGroups of " + playerName + " &7(" + grps.size() + "):"));
+                            if (grps.isEmpty()) {
+                                send(sender, ColorConverter.colorize("&7  (no explicit groups)"));
+                            } else {
+                                for (String g : grps) send(sender, ColorConverter.colorize(" &7- &f" + g));
+                            }
+                            send(sender, ColorConverter.colorize("&8Implicit default group: " + service.getDefaultGroupName()));
+                            String pfx = service.resolvePrefix(id);
+                            String sfx = service.resolveSuffix(id);
+                            if (!pfx.isEmpty() || !sfx.isEmpty()) {
+                                send(sender, ColorConverter.colorize("&8Prefix: &r" + pfx + " &8| Suffix: &r" + sfx));
+                            }
+                        } else if (action.equals("setprefix") || action.equals("setsuffix")) {
                             String value = args.length > 3
                                     ? String.join(" ", java.util.Arrays.copyOfRange(args, 3, args.length))
                                     : "";
@@ -168,7 +185,7 @@ public class FpermCommand implements CommandExecutor {
                     break;
                 case "group":
                     if (args.length < 2) {
-                        send(sender, ColorConverter.colorize("&eUsage: /fperm group create|delete|addperm|adduser|removeuser|setprefix|setsuffix|setweight <args>"));
+                        send(sender, ColorConverter.colorize("&eUsage: /fperm group create|delete|addperm|adduser|removeuser|setprefix|setsuffix|setweight|members <args>"));
                         break;
                     }
                     try {
@@ -246,6 +263,31 @@ public class FpermCommand implements CommandExecutor {
                                 send(sender, ColorConverter.colorize("&aSet weight for group " + args[2] + " to " + weight));
                             } catch (NumberFormatException nfe) {
                                 send(sender, ColorConverter.colorize("&cWeight must be a whole number: " + args[3]));
+                            }
+                        } else if (gaction.equals("members") || gaction.equals("info")) {
+                            if (args.length < 3) { send(sender, ColorConverter.colorize("&eUsage: /fperm group members <name>")); break; }
+                            String gname4 = args[2];
+                            var gd = service.getGroup(gname4);
+                            if (gd == null) {
+                                send(sender, ColorConverter.colorize("&cGroup not found: " + gname4));
+                                break;
+                            }
+                            var members = gd.getMembers();
+                            send(sender, ColorConverter.colorize("&eMembers of group " + gname4 + " &7(" + members.size() + "):"));
+                            if (members.isEmpty()) {
+                                send(sender, ColorConverter.colorize("&7  (no members)"));
+                            } else {
+                                for (String m : members) {
+                                    String name = m;
+                                    try {
+                                        var off = Bukkit.getOfflinePlayer(java.util.UUID.fromString(m));
+                                        if (off.getName() != null) name = off.getName();
+                                    } catch (IllegalArgumentException ignored) {}
+                                    send(sender, ColorConverter.colorize(" &7- &f" + name + " &8(" + m + ")"));
+                                }
+                            }
+                            if (service.isDefaultGroup(gname4)) {
+                                send(sender, ColorConverter.colorize("&8Note: this is the default group and applies to ALL players implicitly."));
                             }
                         } else {
                             send(sender, ColorConverter.colorize("&cUnknown group action: " + gaction));
