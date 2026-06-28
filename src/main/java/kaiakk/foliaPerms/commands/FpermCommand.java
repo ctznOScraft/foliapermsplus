@@ -50,7 +50,7 @@ public class FpermCommand implements CommandExecutor {
         try {
             switch (sub) {
                 case "help":
-                    send(sender, ColorConverter.colorize("&eUsage: /fperm editor | reload | gather | user addperm <player> <perm> | user removeperm <player> <perm> | user addgroup <player> <group> | user removegroup <player> <group> | user setprefix <player> <prefix> | user setsuffix <player> <suffix> | user groups <player> | group create <name> | group delete <name> | group addperm <name> <perm> | group adduser <name> <player> | group removeuser <name> <player> | group setprefix <name> <prefix> | group setsuffix <name> <suffix> | group setweight <name> <number> | group members <name> | check <player> <perm>"));
+                    send(sender, ColorConverter.colorize("&eUsage: /fperm editor | reload | gather | user addperm <player> <perm> | user removeperm <player> <perm> | user addgroup <player> <group> | user removegroup <player> <group> | user setprefix <player> <prefix> | user setsuffix <player> <suffix> | user groups <player> | group create <name> | group delete <name> | group addperm <name> <perm> | group adduser <name> <player> | group removeuser <name> <player> | group setprefix <name> <prefix> | group setsuffix <name> <suffix> | group setweight <name> <number> | group addparent <name> <parent> | group removeparent <name> <parent> | group members <name> | check <player> <perm>"));
                     break;
                 case "editor":
                     if (!(sender instanceof org.bukkit.entity.Player)) {
@@ -185,7 +185,7 @@ public class FpermCommand implements CommandExecutor {
                     break;
                 case "group":
                     if (args.length < 2) {
-                        send(sender, ColorConverter.colorize("&eUsage: /fperm group create|delete|addperm|adduser|removeuser|setprefix|setsuffix|setweight|members <args>"));
+                        send(sender, ColorConverter.colorize("&eUsage: /fperm group create|delete|addperm|adduser|removeuser|setprefix|setsuffix|setweight|addparent|removeparent|members <args>"));
                         break;
                     }
                     try {
@@ -264,6 +264,31 @@ public class FpermCommand implements CommandExecutor {
                             } catch (NumberFormatException nfe) {
                                 send(sender, ColorConverter.colorize("&cWeight must be a whole number: " + args[3]));
                             }
+                        } else if (gaction.equals("addparent")) {
+                            if (args.length < 4) { send(sender, ColorConverter.colorize("&eUsage: /fperm group addparent <name> <parent>")); break; }
+                            String child = args[2];
+                            String parent = args[3];
+                            if (child.equalsIgnoreCase(parent)) {
+                                send(sender, ColorConverter.colorize("&cA group cannot inherit from itself."));
+                                break;
+                            }
+                            if (service.getGroup(parent) == null) {
+                                send(sender, ColorConverter.colorize("&cParent group not found: " + parent));
+                                break;
+                            }
+                            if (service.inheritsFrom(parent, child)) {
+                                send(sender, ColorConverter.colorize("&cThat would create an inheritance cycle ("
+                                        + parent + " already inherits from " + child + ")."));
+                                break;
+                            }
+                            service.addGroupParent(child, parent);
+                            plugin.getPermissionService().saveAsync();
+                            send(sender, ColorConverter.colorize("&aGroup " + child + " now inherits from " + parent));
+                        } else if (gaction.equals("removeparent")) {
+                            if (args.length < 4) { send(sender, ColorConverter.colorize("&eUsage: /fperm group removeparent <name> <parent>")); break; }
+                            service.removeGroupParent(args[2], args[3]);
+                            plugin.getPermissionService().saveAsync();
+                            send(sender, ColorConverter.colorize("&aGroup " + args[2] + " no longer inherits from " + args[3]));
                         } else if (gaction.equals("members") || gaction.equals("info")) {
                             if (args.length < 3) { send(sender, ColorConverter.colorize("&eUsage: /fperm group members <name>")); break; }
                             String gname4 = args[2];
@@ -285,6 +310,9 @@ public class FpermCommand implements CommandExecutor {
                                     } catch (IllegalArgumentException ignored) {}
                                     send(sender, ColorConverter.colorize(" &7- &f" + name + " &8(" + m + ")"));
                                 }
+                            }
+                            if (!gd.getParents().isEmpty()) {
+                                send(sender, ColorConverter.colorize("&8Inherits from: &7" + String.join(", ", gd.getParents())));
                             }
                             if (service.isDefaultGroup(gname4)) {
                                 send(sender, ColorConverter.colorize("&8Note: this is the default group and applies to ALL players implicitly."));

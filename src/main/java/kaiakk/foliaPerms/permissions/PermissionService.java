@@ -169,17 +169,21 @@ public class PermissionService {
      */
     public java.util.Set<String> computeEffectivePermissions(UUID id) {
         var direct = new java.util.HashSet<String>();
+        var groupChain = new java.util.HashSet<String>();
         UserData ud = users.get(id);
         if (ud != null) {
             direct.addAll(ud.getPermissions());
             for (String g : ud.getGroups()) {
-                GroupData gd = groups.get(g.toLowerCase());
-                if (gd != null) direct.addAll(gd.getPermissions());
+                collectGroupAndParents(g, groupChain);
             }
         }
-        // The default group is granted to every player implicitly.
-        GroupData defaultGroup = groups.get(defaultGroupName);
-        if (defaultGroup != null) direct.addAll(defaultGroup.getPermissions());
+        // The default group (and its parents) is granted to every player implicitly.
+        collectGroupAndParents(defaultGroupName, groupChain);
+
+        for (String g : groupChain) {
+            GroupData gd = groups.get(g);
+            if (gd != null) direct.addAll(gd.getPermissions());
+        }
 
         var result = new java.util.HashSet<String>();
         for (String node : direct) {
@@ -221,6 +225,7 @@ public class PermissionService {
             GroupData copy = new GroupData(key);
             copy.getPermissions().addAll(orig.getPermissions());
             copy.getMembers().addAll(orig.getMembers());
+            copy.getParents().addAll(orig.getParents());
             copy.setPrefix(orig.getPrefix());
             copy.setSuffix(orig.getSuffix());
             copy.setWeight(orig.getWeight());
@@ -376,15 +381,19 @@ public class PermissionService {
             if (own != null) return own;
         }
 
-        java.util.List<GroupData> candidates = new java.util.ArrayList<>();
+        // Candidate groups: the player's groups and the default group, plus all
+        // of their inherited parents, ranked by weight (highest wins).
+        var chain = new java.util.HashSet<String>();
         if (ud != null) {
-            for (String g : ud.getGroups()) {
-                GroupData gd = groups.get(g.toLowerCase());
-                if (gd != null) candidates.add(gd);
-            }
+            for (String g : ud.getGroups()) collectGroupAndParents(g, chain);
         }
-        GroupData def = groups.get(defaultGroupName);
-        if (def != null && !candidates.contains(def)) candidates.add(def);
+        collectGroupAndParents(defaultGroupName, chain);
+
+        java.util.List<GroupData> candidates = new java.util.ArrayList<>();
+        for (String g : chain) {
+            GroupData gd = groups.get(g);
+            if (gd != null) candidates.add(gd);
+        }
         candidates.sort((a, b) -> Integer.compare(b.getWeight(), a.getWeight()));
 
         for (GroupData gd : candidates) {
@@ -392,6 +401,60 @@ public class PermissionService {
             if (v != null) return v;
         }
         return "";
+    }
+
+    /**
+     * Collects a group together with all of its parent groups, transitively,
+     * into {@code out} (lowercased names). Guards against inheritance cycles by
+     * skipping already-visited groups.
+     */
+    private java.util.Set<String> collectGroupAndParents(String groupName, java.util.Set<String> out) {
+        if (groupName == null) return out;
+        String key = groupName.toLowerCase();
+        if (!out.add(key)) return out; // already visited -> cycle guard
+        GroupData gd = groups.get(key);
+        if (gd != null) {
+            for (String parent : gd.getParents()) {
+                collectGroupAndParents(parent, out);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Returns true if {@code groupName} inherits from {@code ancestorName}
+     * (directly or transitively). Used to reject inheritance cycles.
+     */
+    public boolean inheritsFrom(String groupName, String ancestorName) {
+        if (groupName == null || ancestorName == null) return false;
+        return collectGroupAndParents(groupName, new java.util.HashSet<>())
+                .contains(ancestorName.toLowerCase());
+    }
+
+    /** Adds {@code parentName} as a parent of {@code groupName} (creating the child if needed). */
+    public void addGroupParent(String groupName, String parentName) {
+        if (groupName == null || parentName == null) return;
+        createGroup(groupName).addParent(parentName);
+        plugin.getLogger().info("Group '" + groupName + "' now inherits from '" + parentName + "'");
+        refreshAfterInheritanceChange();
+    }
+
+    /** Removes {@code parentName} from {@code groupName}'s parents. */
+    public void removeGroupParent(String groupName, String parentName) {
+        if (groupName == null || parentName == null) return;
+        GroupData gd = groups.get(groupName.toLowerCase());
+        if (gd != null) gd.removeParent(parentName);
+        plugin.getLogger().info("Group '" + groupName + "' no longer inherits from '" + parentName + "'");
+        refreshAfterInheritanceChange();
+    }
+
+    /**
+     * Inheritance changes can affect members of descendant groups too, so we
+     * refresh every online player. This is a rare admin action, and each
+     * per-player refresh is cheap, so a full refresh is acceptable here.
+     */
+    private void refreshAfterInheritanceChange() {
+        if (plugin instanceof FoliaPerms fp) fp.refreshAllAttachments();
     }
 
     /**
@@ -417,8 +480,17 @@ public class PermissionService {
                 affected.add(e.getKey());
             }
         }
+        // Also drop the deleted group from any other group's parents.
+        boolean wasParent = false;
+        for (GroupData gd : groups.values()) {
+            if (gd.getParents().remove(key)) wasParent = true;
+        }
         plugin.getLogger().info("Deleted group '" + key + "' (removed from " + affected.size() + " users)");
-        for (UUID id : affected) refreshPlayer(id);
+        if (wasParent) {
+            refreshAfterInheritanceChange();
+        } else {
+            for (UUID id : affected) refreshPlayer(id);
+        }
         return true;
     }
 
@@ -498,11 +570,15 @@ public class PermissionService {
     }
 
     /**
-     * Helper method to check group permissions.
+     * Helper method to check group permissions, including all inherited parent
+     * groups (transitively, cycle-safe).
      */
     private boolean checkGroupPermission(String groupName, String node) {
-        GroupData gd = groups.get(groupName.toLowerCase());
-        return gd != null && matches(gd.getPermissions(), node);
+        for (String g : collectGroupAndParents(groupName, new java.util.HashSet<>())) {
+            GroupData gd = groups.get(g);
+            if (gd != null && matches(gd.getPermissions(), node)) return true;
+        }
+        return false;
     }
 
     /**

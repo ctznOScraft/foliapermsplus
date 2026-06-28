@@ -7,6 +7,8 @@ public class GroupData {
     private final String name;
     private final Set<String> permissions = ConcurrentHashMap.newKeySet();
     private final Set<String> members = ConcurrentHashMap.newKeySet();
+    // Parent groups this group inherits permissions/meta from (LuckPerms-style).
+    private final Set<String> parents = ConcurrentHashMap.newKeySet();
 
     // Chat/meta data (LuckPerms-style). Null means "not set".
     private volatile String prefix;
@@ -68,5 +70,17 @@ public class GroupData {
 
     public void removeMember(String uuid) {
         members.remove(uuid);
+    }
+
+    public Set<String> getParents() {
+        return parents;
+    }
+
+    public void addParent(String parent) {
+        if (parent != null) parents.add(parent.toLowerCase());
+    }
+
+    public void removeParent(String parent) {
+        if (parent != null) parents.remove(parent.toLowerCase());
     }
 }

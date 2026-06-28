@@ -113,6 +113,11 @@ public class YamlStorage {
                         gd.addMember(String.valueOf(o));
                     }
                 }
+                if (cfg.isList("groups." + key + ".parents")) {
+                    for (Object o : cfg.getList("groups." + key + ".parents")) {
+                        gd.addParent(String.valueOf(o));
+                    }
+                }
                 gd.setPrefix(cfg.getString("groups." + key + ".prefix", null));
                 gd.setSuffix(cfg.getString("groups." + key + ".suffix", null));
                 gd.setWeight(cfg.getInt("groups." + key + ".weight", 0));
@@ -151,6 +156,7 @@ public class YamlStorage {
                 GroupData gd = e.getValue();
                 cfg.set(path + ".permissions", gd.getPermissions().stream().toList());
                 cfg.set(path + ".members", gd.getMembers().stream().toList());
+                cfg.set(path + ".parents", gd.getParents().stream().toList());
                 cfg.set(path + ".prefix", gd.getPrefix());
                 cfg.set(path + ".suffix", gd.getSuffix());
                 cfg.set(path + ".weight", gd.getWeight());
