@@ -12,7 +12,6 @@ import java.util.UUID;
 
 /**
  * YAML-based storage for user and group permission data.
- * Version: 1.13.0
  */
 public class YamlStorage {
     private final JavaPlugin plugin;
@@ -74,6 +73,8 @@ public class YamlStorage {
                         ud.addGroup(String.valueOf(o));
                     }
                 }
+                ud.setPrefix(cfg.getString("users." + key + ".prefix", null));
+                ud.setSuffix(cfg.getString("users." + key + ".suffix", null));
                 users.put(id, ud);
             }
             
@@ -112,6 +113,14 @@ public class YamlStorage {
                         gd.addMember(String.valueOf(o));
                     }
                 }
+                if (cfg.isList("groups." + key + ".parents")) {
+                    for (Object o : cfg.getList("groups." + key + ".parents")) {
+                        gd.addParent(String.valueOf(o));
+                    }
+                }
+                gd.setPrefix(cfg.getString("groups." + key + ".prefix", null));
+                gd.setSuffix(cfg.getString("groups." + key + ".suffix", null));
+                gd.setWeight(cfg.getInt("groups." + key + ".weight", 0));
                 groups.put(key.toLowerCase(), gd);
             }
             
@@ -133,16 +142,24 @@ public class YamlStorage {
             // Save users
             for (Map.Entry<UUID, UserData> e : users.entrySet()) {
                 String path = "users." + e.getKey().toString();
-                cfg.set(path + ".permissions", e.getValue().getPermissions().stream().toList());
-                cfg.set(path + ".groups", e.getValue().getGroups().stream().toList());
+                UserData ud = e.getValue();
+                cfg.set(path + ".permissions", ud.getPermissions().stream().toList());
+                cfg.set(path + ".groups", ud.getGroups().stream().toList());
+                cfg.set(path + ".prefix", ud.getPrefix());
+                cfg.set(path + ".suffix", ud.getSuffix());
             }
 
             // Save groups
             for (Map.Entry<String, GroupData> e : groups.entrySet()) {
                 String key = e.getKey().toLowerCase();
                 String path = "groups." + key;
-                cfg.set(path + ".permissions", e.getValue().getPermissions().stream().toList());
-                cfg.set(path + ".members", e.getValue().getMembers().stream().toList());
+                GroupData gd = e.getValue();
+                cfg.set(path + ".permissions", gd.getPermissions().stream().toList());
+                cfg.set(path + ".members", gd.getMembers().stream().toList());
+                cfg.set(path + ".parents", gd.getParents().stream().toList());
+                cfg.set(path + ".prefix", gd.getPrefix());
+                cfg.set(path + ".suffix", gd.getSuffix());
+                cfg.set(path + ".weight", gd.getWeight());
             }
 
             cfg.save(file);

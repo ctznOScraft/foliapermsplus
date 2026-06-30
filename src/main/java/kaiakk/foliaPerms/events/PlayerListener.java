@@ -12,7 +12,6 @@ import org.bukkit.permissions.PermissionAttachment;
 
 /**
  * Handles player-specific events for FoliaPerms.
- * Version: 1.13.0
  */
 public class PlayerListener implements Listener {
     private final FoliaPerms plugin;

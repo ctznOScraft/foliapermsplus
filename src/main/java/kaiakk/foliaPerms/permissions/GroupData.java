@@ -7,6 +7,14 @@ public class GroupData {
     private final String name;
     private final Set<String> permissions = ConcurrentHashMap.newKeySet();
     private final Set<String> members = ConcurrentHashMap.newKeySet();
+    // Parent groups this group inherits permissions/meta from (LuckPerms-style).
+    private final Set<String> parents = ConcurrentHashMap.newKeySet();
+
+    // Chat/meta data (LuckPerms-style). Null means "not set".
+    private volatile String prefix;
+    private volatile String suffix;
+    // Higher weight wins when resolving which group's prefix/suffix to display.
+    private volatile int weight = 0;
 
     public GroupData(String name) {
         this.name = name.toLowerCase();
@@ -14,6 +22,30 @@ public class GroupData {
 
     public String getName() {
         return name;
+    }
+
+    public String getPrefix() {
+        return prefix;
+    }
+
+    public void setPrefix(String prefix) {
+        this.prefix = (prefix == null || prefix.isEmpty()) ? null : prefix;
+    }
+
+    public String getSuffix() {
+        return suffix;
+    }
+
+    public void setSuffix(String suffix) {
+        this.suffix = (suffix == null || suffix.isEmpty()) ? null : suffix;
+    }
+
+    public int getWeight() {
+        return weight;
+    }
+
+    public void setWeight(int weight) {
+        this.weight = weight;
     }
 
     public Set<String> getPermissions() {
@@ -38,5 +70,17 @@ public class GroupData {
 
     public void removeMember(String uuid) {
         members.remove(uuid);
+    }
+
+    public Set<String> getParents() {
+        return parents;
+    }
+
+    public void addParent(String parent) {
+        if (parent != null) parents.add(parent.toLowerCase());
+    }
+
+    public void removeParent(String parent) {
+        if (parent != null) parents.remove(parent.toLowerCase());
     }
 }

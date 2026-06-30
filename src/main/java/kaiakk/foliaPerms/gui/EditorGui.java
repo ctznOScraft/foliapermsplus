@@ -17,7 +17,6 @@ import java.util.UUID;
 
 /**
  * GUI factory for the FoliaPerms permission editor.
- * Version: 1.13.0
  */
 public class EditorGui {
 
@@ -71,7 +70,13 @@ public class EditorGui {
     public static void openPermEditor(Player player, FoliaPerms plugin,
                                       boolean isGroup, String targetId, int page) {
         PermissionService service = plugin.getPermissionService();
-        List<String> allPerms = new ArrayList<>(service.getRegisteredPermissionsSorted());
+        // Always offer the "*" (all permissions) wildcard first, then the sorted
+        // registered permissions (without duplicating "*" if it was registered).
+        List<String> allPerms = new ArrayList<>();
+        allPerms.add("*");
+        for (String p : service.getRegisteredPermissionsSorted()) {
+            if (!"*".equals(p)) allPerms.add(p);
+        }
 
         int totalPages = Math.max(1, (int) Math.ceil((double) allPerms.size() / GuiConstants.PERMS_PER_PAGE));
         int currentPage = Math.max(0, Math.min(page, totalPages - 1));
@@ -91,9 +96,16 @@ public class EditorGui {
             boolean has = isGroup
                     ? service.groupHasDirectPermission(targetId, perm)
                     : service.userHasDirectPermission(UUID.fromString(targetId), perm);
-            Material mat = has ? Material.LIME_DYE : Material.RED_DYE;
             String statusLine = has ? "&aGRANTED  \u2714  click to remove" : "&cNOT GRANTED  \u2718  click to add";
-            inv.setItem(i - start, makeItem(mat, "&f" + perm, statusLine));
+            if ("*".equals(perm)) {
+                // Distinct item for the all-permissions wildcard. The display name
+                // stays "*" (colour codes are stripped on click), so toggling works.
+                inv.setItem(i - start, makeItem(Material.NETHER_STAR, "&d&l*",
+                        "&7Wildcard: grants &fALL &7permissions.", statusLine));
+            } else {
+                Material mat = has ? Material.LIME_DYE : Material.RED_DYE;
+                inv.setItem(i - start, makeItem(mat, "&f" + perm, statusLine));
+            }
         }
 
         ItemStack pane = makeItem(Material.GRAY_STAINED_GLASS_PANE, " ");

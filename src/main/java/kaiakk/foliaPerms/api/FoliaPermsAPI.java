@@ -10,7 +10,6 @@ import java.util.UUID;
  * Bukkit's ServicesManager and call these methods to check or inspect permissions.
  *
  * Implementations MUST be thread-safe for Folia (concurrent reads/writes).
- * Version: 1.13.0
  */
 public interface FoliaPermsAPI {
 
@@ -42,4 +41,21 @@ public interface FoliaPermsAPI {
      * the first group or null if none.
      */
     String getPrimaryGroup(Player player);
+
+    /**
+     * Get the resolved prefix for the player (user override, otherwise the
+     * highest-weight group prefix, including the default group).
+     *
+     * @return the prefix string (may contain legacy {@code &} colour codes);
+     *         empty string if none is set, never null.
+     */
+    String getPrefix(Player player);
+
+    /**
+     * Get the resolved suffix for the player.
+     *
+     * @return the suffix string (may contain legacy {@code &} colour codes);
+     *         empty string if none is set, never null.
+     */
+    String getSuffix(Player player);
 }

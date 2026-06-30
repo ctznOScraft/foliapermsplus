@@ -9,6 +9,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.permissions.PermissionAttachment;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -19,7 +21,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * FoliaPerms - A simple permission manager for Folia servers.
- * Version: 1.13.0
  * 
  * This plugin provides:
  * - User and group-based permission management
@@ -39,6 +40,8 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
 
     private PermissionService permissionService;
     private final Map<UUID, PermissionAttachment> attachments = new ConcurrentHashMap<>();
+    private boolean tablistFormatting = true;
+    private boolean chatFormatting = true;
 
     @Override
     public void onLoad() {
@@ -51,14 +54,16 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
             getServer().getPluginManager().disablePlugin(this);
         } else {
             getLogger().info("Folia environment detected. FoliaPerms is ready to enable.");
-            getLogger().info("Enabling FoliaPerms v1.13.0...");
+            getLogger().info("Enabling FoliaPerms v" + getDescription().getVersion() + "...");
             getLogger().info("Loading all permissions data...");
         }
     }
     
     @Override
     public void onEnable() {
-        getLogger().info("FoliaPerms v1.13.0 enabled successfully. Welcome to the Folia environment!");
+        getLogger().info("FoliaPerms v" + getDescription().getVersion() + " enabled successfully. Welcome to the Folia environment!");
+
+        saveDefaultConfig();
 
         this.permissionService = new PermissionService(this);
         try {
@@ -68,14 +73,26 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
             kaiakk.foliaPerms.internal.ErrorHandler.handle(this, "Failed to load permissions data", e);
         }
 
+        String defaultGroup = getConfig().getString("default-group", "default");
+        permissionService.setDefaultGroupName(defaultGroup);
+        permissionService.ensureDefaultGroup();
+        getLogger().info("Default group set to '" + permissionService.getDefaultGroupName() + "'.");
+
         if (getCommand("fperm") != null) {
             getCommand("fperm").setExecutor(new FpermCommand(this));
             getCommand("fperm").setTabCompleter(new kaiakk.foliaPerms.commands.FpermTabCompleter(this));
         }
 
+        this.tablistFormatting = getConfig().getBoolean("tablist-formatting", true);
+        this.chatFormatting = getConfig().getBoolean("chat-formatting", true);
+
         getServer().getPluginManager().registerEvents(new PlayerListener(this), this);
         getServer().getPluginManager().registerEvents(new kaiakk.foliaPerms.events.PluginEnableListener(this), this);
         getServer().getPluginManager().registerEvents(new kaiakk.foliaPerms.gui.GuiListener(), this);
+        if (chatFormatting) {
+            getServer().getPluginManager().registerEvents(new kaiakk.foliaPerms.events.ChatListener(this), this);
+            getLogger().info("Chat prefix/suffix formatting enabled.");
+        }
 
         getServer().getServicesManager().register(FoliaPermsAPI.class, this, this, ServicePriority.Normal);
         getLogger().info("FoliaPerms API registered with ServicesManager.");
@@ -98,11 +115,55 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
         } catch (Exception e) {
             kaiakk.foliaPerms.internal.ErrorHandler.handle(this, "Failed to gather registered permissions", e);
         }
+
+        registerIntegrations();
+    }
+
+    /**
+     * Hooks into optional third-party plugins (Vault, PlaceholderAPI) when they
+     * are installed. Each hook lives in its own method and is guarded by a
+     * plugin-presence check plus a Throwable catch, so a missing soft dependency
+     * never loads its integration classes or breaks startup.
+     */
+    private void registerIntegrations() {
+        if (getServer().getPluginManager().getPlugin("Vault") != null) {
+            registerVault();
+        } else {
+            getLogger().info("Vault not found; skipping Vault chat/permission hook.");
+        }
+        if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
+            registerPlaceholderAPI();
+        } else {
+            getLogger().info("PlaceholderAPI not found; skipping placeholder expansion.");
+        }
+    }
+
+    private void registerVault() {
+        try {
+            kaiakk.foliaPerms.integration.VaultPermission vaultPerm = new kaiakk.foliaPerms.integration.VaultPermission(this);
+            getServer().getServicesManager().register(net.milkbowl.vault.permission.Permission.class, vaultPerm, this, ServicePriority.Highest);
+
+            kaiakk.foliaPerms.integration.VaultChat vaultChat = new kaiakk.foliaPerms.integration.VaultChat(this, vaultPerm);
+            getServer().getServicesManager().register(net.milkbowl.vault.chat.Chat.class, vaultChat, this, ServicePriority.Highest);
+
+            getLogger().info("Hooked into Vault: registered FoliaPerms permission and chat providers.");
+        } catch (Throwable t) {
+            getLogger().warning("Failed to hook into Vault: " + t.getMessage());
+        }
+    }
+
+    private void registerPlaceholderAPI() {
+        try {
+            new kaiakk.foliaPerms.integration.FoliaPermsExpansion(this).register();
+            getLogger().info("Registered PlaceholderAPI expansion 'foliaperms' (%foliaperms_prefix%, _suffix%, _group%, _weight%).");
+        } catch (Throwable t) {
+            getLogger().warning("Failed to register PlaceholderAPI expansion: " + t.getMessage());
+        }
     }
 
     @Override
     public void onDisable() {
-        getLogger().info("FoliaPerms v1.13.0 disabling...");
+        getLogger().info("FoliaPerms v" + getDescription().getVersion() + " disabling...");
         getLogger().info("Saving permissions...");
         if (this.permissionService != null) {
             try {
@@ -123,10 +184,45 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
     }
 
     /**
-     * Refreshes permission attachment for a specific player.
+     * Runs a task on the region thread that owns the given player. On Folia this
+     * is mandatory: a player's permission attachment must only be mutated from
+     * its owning region thread. Falls back gracefully on non-Folia servers.
+     */
+    private void runForPlayer(Player player, Runnable task) {
+        if (player == null) return;
+        try {
+            player.getScheduler().run(this, t -> task.run(), null);
+        } catch (Throwable foliaUnavailable) {
+            try {
+                if (Bukkit.isPrimaryThread()) {
+                    task.run();
+                } else {
+                    Bukkit.getScheduler().runTask(this, task);
+                }
+            } catch (Throwable t) {
+                getLogger().warning("Could not schedule attachment refresh for "
+                        + player.getName() + ": " + t.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Refreshes permission attachment for a specific player. Safe to call from
+     * any thread; the actual work is dispatched onto the player's region thread.
      */
     public void refreshPlayerAttachment(Player player) {
         if (player == null || permissionService == null) return;
+        runForPlayer(player, () -> applyAttachment(player));
+    }
+
+    /**
+     * Rebuilds a player's attachment from scratch with only the permissions they
+     * actually have. We intentionally do NOT enumerate every registered
+     * permission and set it to {@code false}: doing so was both a major
+     * performance sink and the reason operators lost their op-default
+     * permissions (an explicit {@code false} overrides the op default).
+     */
+    private void applyAttachment(Player player) {
         try {
             UUID id = player.getUniqueId();
             PermissionAttachment old = attachments.remove(id);
@@ -137,29 +233,24 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
             PermissionAttachment attach = player.addAttachment(this);
             attachments.put(id, attach);
 
-            getLogger().fine("Created/updated the permissions attachment for " + player.getName());
-
-            var registered = permissionService.getRegisteredPermissions();
-            for (String node : registered) {
-                attach.setPermission(node, false);
-            }
-
-            var allowed = permissionService.getAllowedPermissions(id);
-            for (String node : allowed) {
+            for (String node : permissionService.computeEffectivePermissions(id)) {
                 attach.setPermission(node, true);
             }
+
+            player.recalculatePermissions();
             try {
-                player.recalculatePermissions();
-                getLogger().fine("Recalculated permissions for " + player.getName());
-                try {
-                    player.updateCommands();
-                    getLogger().fine("Updated command tree for " + player.getName());
-                } catch (Throwable t) {
-                    getLogger().warning("Failed to update command tree for " + player.getName() + ": " + t.getMessage());
-                }
+                player.updateCommands();
             } catch (Throwable t) {
-                getLogger().warning("Failed to recalculate permissions for " + player.getName() + ": " + t.getMessage());
+                getLogger().fine("Could not update command tree for " + player.getName() + ": " + t.getMessage());
             }
+            if (tablistFormatting) {
+                try {
+                    player.playerListName(buildDisplayName(id, player.getName()));
+                } catch (Throwable t) {
+                    getLogger().fine("Could not update tab-list name for " + player.getName() + ": " + t.getMessage());
+                }
+            }
+            getLogger().fine("Refreshed permission attachment for " + player.getName());
         } catch (Exception e) {
             getLogger().severe("Failed to refresh attachment for " + player.getName() + ": " + e.getMessage());
         }
@@ -171,6 +262,21 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
     public void refreshAllAttachments() {
         for (Player p : Bukkit.getOnlinePlayers()) {
             refreshPlayerAttachment(p);
+        }
+    }
+
+    /**
+     * Refreshes only the online members of a group. Used when a group's
+     * permissions change, so we avoid touching every online player.
+     */
+    public void refreshGroupMembers(String group) {
+        if (group == null || permissionService == null) return;
+        String key = group.toLowerCase();
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            var ud = permissionService.getUser(p.getUniqueId());
+            if (ud != null && ud.getGroups().contains(key)) {
+                refreshPlayerAttachment(p);
+            }
         }
     }
 
@@ -227,5 +333,31 @@ public final class FoliaPerms extends JavaPlugin implements FoliaPermsAPI {
     public String getPrimaryGroup(Player player) {
         var groups = getPlayerGroups(player);
         return groups.stream().findFirst().orElse(null);
+    }
+
+    @Override
+    public String getPrefix(Player player) {
+        if (player == null || permissionService == null) return "";
+        return permissionService.resolvePrefix(player.getUniqueId());
+    }
+
+    @Override
+    public String getSuffix(Player player) {
+        if (player == null || permissionService == null) return "";
+        return permissionService.resolveSuffix(player.getUniqueId());
+    }
+
+    /**
+     * Builds the tab-list display name as {@code prefix + name + suffix},
+     * translating legacy {@code &} colour codes in the prefix/suffix.
+     */
+    public Component buildDisplayName(UUID id, String name) {
+        LegacyComponentSerializer legacy = LegacyComponentSerializer.legacyAmpersand();
+        String prefix = permissionService.resolvePrefix(id);
+        String suffix = permissionService.resolveSuffix(id);
+        return Component.empty()
+                .append(legacy.deserialize(prefix))
+                .append(Component.text(name))
+                .append(legacy.deserialize(suffix));
     }
 }

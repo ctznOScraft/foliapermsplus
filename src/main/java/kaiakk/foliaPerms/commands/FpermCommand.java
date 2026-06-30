@@ -50,7 +50,7 @@ public class FpermCommand implements CommandExecutor {
         try {
             switch (sub) {
                 case "help":
-                    send(sender, ColorConverter.colorize("&eUsage: /fperm editor | reload | gather | user addperm <player> <perm> | user removeperm <player> <perm> | user addgroup <player> <group> | user removegroup <player> <group> | group create <name> | group addperm <name> <perm> | group adduser <name> <player> | group removeuser <name> <player> | check <player> <perm>"));
+                    send(sender, ColorConverter.colorize("&eUsage: /fperm editor | reload | gather | user addperm <player> <perm> | user removeperm <player> <perm> | user addgroup <player> <group> | user removegroup <player> <group> | user setprefix <player> <prefix> | user setsuffix <player> <suffix> | user groups <player> | group create <name> | group delete <name> | group addperm <name> <perm> | group adduser <name> <player> | group removeuser <name> <player> | group setprefix <name> <prefix> | group setsuffix <name> <suffix> | group setweight <name> <number> | group addparent <name> <parent> | group removeparent <name> <parent> | group members <name> | check <player> <perm>"));
                     break;
                 case "editor":
                     if (!(sender instanceof org.bukkit.entity.Player)) {
@@ -71,8 +71,12 @@ public class FpermCommand implements CommandExecutor {
                     }
                     break;
                 case "reload":
+                    plugin.reloadConfig();
                     service.load();
-                    send(sender, ColorConverter.colorize("&aPermissions reloaded."));
+                    service.setDefaultGroupName(plugin.getConfig().getString("default-group", "default"));
+                    service.ensureDefaultGroup();
+                    plugin.refreshAllAttachments();
+                    send(sender, ColorConverter.colorize("&aPermissions reloaded. Default group: " + service.getDefaultGroupName()));
                     break;
                 case "refresh":
                     try {
@@ -84,13 +88,13 @@ public class FpermCommand implements CommandExecutor {
                     }
                     break;
                 case "user":
-                    if (args.length < 4) {
-                        send(sender, ColorConverter.colorize("&eUsage: /fperm user addperm|removeperm|addgroup|removegroup <player> <perm|group>"));
+                    if (args.length < 3) {
+                        send(sender, ColorConverter.colorize("&eUsage: /fperm user addperm|removeperm|addgroup|removegroup|setprefix|setsuffix|groups <player> <value>"));
                         break;
                     }
                     String action = args[1].toLowerCase();
                     String playerName = args[2];
-                    String perm = args[3];
+                    String perm = args.length > 3 ? args[3] : null;
                     try {
                         var op = Bukkit.getOfflinePlayer(playerName);
                         if (op == null) {
@@ -107,7 +111,39 @@ public class FpermCommand implements CommandExecutor {
                             break;
                         }
 
-                        if (action.equals("addperm")) {
+                        if (action.equals("groups") || action.equals("info")) {
+                            var ud = service.getUser(id);
+                            java.util.List<String> grps = ud == null
+                                    ? java.util.Collections.emptyList()
+                                    : new java.util.ArrayList<>(ud.getGroups());
+                            send(sender, ColorConverter.colorize("&eGroups of " + playerName + " &7(" + grps.size() + "):"));
+                            if (grps.isEmpty()) {
+                                send(sender, ColorConverter.colorize("&7  (no explicit groups)"));
+                            } else {
+                                for (String g : grps) send(sender, ColorConverter.colorize(" &7- &f" + g));
+                            }
+                            send(sender, ColorConverter.colorize("&8Implicit default group: " + service.getDefaultGroupName()));
+                            String pfx = service.resolvePrefix(id);
+                            String sfx = service.resolveSuffix(id);
+                            if (!pfx.isEmpty() || !sfx.isEmpty()) {
+                                send(sender, ColorConverter.colorize("&8Prefix: &r" + pfx + " &8| Suffix: &r" + sfx));
+                            }
+                        } else if (action.equals("setprefix") || action.equals("setsuffix")) {
+                            String value = args.length > 3
+                                    ? String.join(" ", java.util.Arrays.copyOfRange(args, 3, args.length))
+                                    : "";
+                            String what = action.equals("setprefix") ? "prefix" : "suffix";
+                            if (action.equals("setprefix")) service.setUserPrefix(id, value);
+                            else service.setUserSuffix(id, value);
+                            plugin.getPermissionService().saveAsync();
+                            if (value.isEmpty()) {
+                                send(sender, ColorConverter.colorize("&aCleared " + what + " for " + playerName));
+                            } else {
+                                send(sender, ColorConverter.colorize("&aSet " + what + " for " + playerName + " to " + value));
+                            }
+                        } else if (perm == null) {
+                            send(sender, ColorConverter.colorize("&eUsage: /fperm user " + action + " <player> <value>"));
+                        } else if (action.equals("addperm")) {
                             service.addUserPermission(id, perm);
                             plugin.getPermissionService().saveAsync();
                             var onlineTarget = Bukkit.getPlayerExact(playerName);
@@ -149,7 +185,7 @@ public class FpermCommand implements CommandExecutor {
                     break;
                 case "group":
                     if (args.length < 2) {
-                        send(sender, ColorConverter.colorize("&eUsage: /fperm group create|addperm|adduser|removeuser <args>"));
+                        send(sender, ColorConverter.colorize("&eUsage: /fperm group create|delete|addperm|adduser|removeuser|setprefix|setsuffix|setweight|addparent|removeparent|members <args>"));
                         break;
                     }
                     try {
@@ -158,13 +194,24 @@ public class FpermCommand implements CommandExecutor {
                             if (args.length < 3) { send(sender, ColorConverter.colorize("Usage: /fperm group create <name>")); break; }
                             service.createGroup(args[2]);
                             plugin.getPermissionService().saveAsync();
-                            plugin.refreshAllAttachments();
                             send(sender, ColorConverter.colorize("&aGroup created: " + args[2]));
+                        } else if (gaction.equals("delete")) {
+                            if (args.length < 3) { send(sender, ColorConverter.colorize("&eUsage: /fperm group delete <name>")); break; }
+                            if (service.isDefaultGroup(args[2])) {
+                                send(sender, ColorConverter.colorize("&cCannot delete the default group '" + args[2] + "'."));
+                                break;
+                            }
+                            boolean deleted = service.deleteGroup(args[2]);
+                            if (deleted) {
+                                plugin.getPermissionService().saveAsync();
+                                send(sender, ColorConverter.colorize("&aGroup deleted: " + args[2]));
+                            } else {
+                                send(sender, ColorConverter.colorize("&cGroup not found: " + args[2]));
+                            }
                         } else if (gaction.equals("addperm")) {
                             if (args.length < 4) { send(sender, ColorConverter.colorize("&eUsage: /fperm group addperm <name> <perm>")); break; }
                             service.addGroupPermission(args[2], args[3]);
                             plugin.getPermissionService().saveAsync();
-                            plugin.refreshAllAttachments();
                             send(sender, ColorConverter.colorize("&aAdded permission " + args[3] + " to group " + args[2]));
                         } else if (gaction.equals("adduser")) {
                             if (args.length < 4) { send(sender, ColorConverter.colorize("&eUsage: /fperm group adduser <name> <player>")); break; }
@@ -192,6 +239,84 @@ public class FpermCommand implements CommandExecutor {
                             var ot2 = Bukkit.getPlayerExact(args[3]);
                             if (ot2 != null) plugin.refreshPlayerAttachment(ot2);
                             send(sender, ColorConverter.colorize("&aRemoved " + args[3] + " from group " + gname2));
+                        } else if (gaction.equals("setprefix") || gaction.equals("setsuffix")) {
+                            if (args.length < 3) { send(sender, ColorConverter.colorize("&eUsage: /fperm group " + gaction + " <name> <value>")); break; }
+                            String gname3 = args[2];
+                            String value = args.length > 3
+                                    ? String.join(" ", java.util.Arrays.copyOfRange(args, 3, args.length))
+                                    : "";
+                            String what = gaction.equals("setprefix") ? "prefix" : "suffix";
+                            if (gaction.equals("setprefix")) service.setGroupPrefix(gname3, value);
+                            else service.setGroupSuffix(gname3, value);
+                            plugin.getPermissionService().saveAsync();
+                            if (value.isEmpty()) {
+                                send(sender, ColorConverter.colorize("&aCleared " + what + " for group " + gname3));
+                            } else {
+                                send(sender, ColorConverter.colorize("&aSet " + what + " for group " + gname3 + " to " + value));
+                            }
+                        } else if (gaction.equals("setweight")) {
+                            if (args.length < 4) { send(sender, ColorConverter.colorize("&eUsage: /fperm group setweight <name> <number>")); break; }
+                            try {
+                                int weight = Integer.parseInt(args[3]);
+                                service.setGroupWeight(args[2], weight);
+                                plugin.getPermissionService().saveAsync();
+                                send(sender, ColorConverter.colorize("&aSet weight for group " + args[2] + " to " + weight));
+                            } catch (NumberFormatException nfe) {
+                                send(sender, ColorConverter.colorize("&cWeight must be a whole number: " + args[3]));
+                            }
+                        } else if (gaction.equals("addparent")) {
+                            if (args.length < 4) { send(sender, ColorConverter.colorize("&eUsage: /fperm group addparent <name> <parent>")); break; }
+                            String child = args[2];
+                            String parent = args[3];
+                            if (child.equalsIgnoreCase(parent)) {
+                                send(sender, ColorConverter.colorize("&cA group cannot inherit from itself."));
+                                break;
+                            }
+                            if (service.getGroup(parent) == null) {
+                                send(sender, ColorConverter.colorize("&cParent group not found: " + parent));
+                                break;
+                            }
+                            if (service.inheritsFrom(parent, child)) {
+                                send(sender, ColorConverter.colorize("&cThat would create an inheritance cycle ("
+                                        + parent + " already inherits from " + child + ")."));
+                                break;
+                            }
+                            service.addGroupParent(child, parent);
+                            plugin.getPermissionService().saveAsync();
+                            send(sender, ColorConverter.colorize("&aGroup " + child + " now inherits from " + parent));
+                        } else if (gaction.equals("removeparent")) {
+                            if (args.length < 4) { send(sender, ColorConverter.colorize("&eUsage: /fperm group removeparent <name> <parent>")); break; }
+                            service.removeGroupParent(args[2], args[3]);
+                            plugin.getPermissionService().saveAsync();
+                            send(sender, ColorConverter.colorize("&aGroup " + args[2] + " no longer inherits from " + args[3]));
+                        } else if (gaction.equals("members") || gaction.equals("info")) {
+                            if (args.length < 3) { send(sender, ColorConverter.colorize("&eUsage: /fperm group members <name>")); break; }
+                            String gname4 = args[2];
+                            var gd = service.getGroup(gname4);
+                            if (gd == null) {
+                                send(sender, ColorConverter.colorize("&cGroup not found: " + gname4));
+                                break;
+                            }
+                            var members = gd.getMembers();
+                            send(sender, ColorConverter.colorize("&eMembers of group " + gname4 + " &7(" + members.size() + "):"));
+                            if (members.isEmpty()) {
+                                send(sender, ColorConverter.colorize("&7  (no members)"));
+                            } else {
+                                for (String m : members) {
+                                    String name = m;
+                                    try {
+                                        var off = Bukkit.getOfflinePlayer(java.util.UUID.fromString(m));
+                                        if (off.getName() != null) name = off.getName();
+                                    } catch (IllegalArgumentException ignored) {}
+                                    send(sender, ColorConverter.colorize(" &7- &f" + name + " &8(" + m + ")"));
+                                }
+                            }
+                            if (!gd.getParents().isEmpty()) {
+                                send(sender, ColorConverter.colorize("&8Inherits from: &7" + String.join(", ", gd.getParents())));
+                            }
+                            if (service.isDefaultGroup(gname4)) {
+                                send(sender, ColorConverter.colorize("&8Note: this is the default group and applies to ALL players implicitly."));
+                            }
                         } else {
                             send(sender, ColorConverter.colorize("&cUnknown group action: " + gaction));
                         }
